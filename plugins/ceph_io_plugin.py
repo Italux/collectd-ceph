@@ -19,14 +19,14 @@
 #   Ricardo Rocha <ricardo@catalyst.net.nz>
 #
 # About this plugin:
-#   This plugin collects information regarding Ceph OSDs.
+#   This plugin collects information regarding Ceph pools.
 #
 # collectd:
 #   http://collectd.org
 # collectd-python:
 #   http://collectd.org/documentation/manpages/collectd-python.5.shtml
-# ceph osds:
-#   http://ceph.com/docs/master/rados/operations/monitoring/#checking-osd-status
+# ceph pools:
+#   http://ceph.com/docs/master/rados/operations/pools/
 #
 
 import collectd
@@ -36,63 +36,46 @@ import subprocess
 
 import base
 
-class CephOsdPlugin(base.Base):
+class CephIOPlugin(base.Base):
 
     def __init__(self):
         base.Base.__init__(self)
         self.prefix = 'ceph'
 
     def get_stats(self):
-        """Retrieves stats from ceph osds"""
+        """Retrieves stats from ceph pools"""
 
         ceph_cluster = "%s-%s" % (self.prefix, self.cluster)
 
-        data = { ceph_cluster: { 
-            'pool': { 'number': 0 },
-            'osd': { 'up': 0, 'in': 0, 'down': 0, 'out': 0} 
-        } }
-        output = None
+        data = { ceph_cluster: {} }
+
+        stats_output = None
         try:
-            output = subprocess.check_output('ceph osd dump --format json', shell=True)
+            stats_output = subprocess.check_output('ceph osd pool stats -f json', shell=True)
         except Exception as exc:
-            collectd.error("ceph-osd: failed to ceph osd dump :: %s :: %s"
+            collectd.error("ceph-io: failed to ceph pool stats :: %s :: %s"
                     % (exc, traceback.format_exc()))
             return
 
-        if output is None:
-            collectd.error('ceph-osd: failed to ceph osd dump :: output was None')
+        if stats_output is None:
+            collectd.error('ceph-io: failed to ceph osd pool stats :: output was None')
 
-        json_data = json.loads(output)
+        json_stats_data = json.loads(stats_output)
 
-        # number of pools
-        data[ceph_cluster]['pool']['number'] = len(json_data['pools'])
+        # push osd pool stats results
+        for pool in json_stats_data:
+            pool_key = "pool-%s" % pool['pool_name']
+            data[ceph_cluster][pool_key] = {}
+            pool_data = data[ceph_cluster][pool_key] 
+            for stat in ('read_bytes_sec', 'write_bytes_sec', 'op_per_sec'):
+                pool_data[stat] = pool['client_io_rate'][stat] if pool['client_io_rate'].has_key(stat) else 0
 
-        # pool metadata
-        for pool in json_data['pools']:
-            pool_name = "pool-%s" % pool['pool_name']
-            data[ceph_cluster][pool_name] = {}
-            data[ceph_cluster][pool_name]['size'] = pool['size']
-            data[ceph_cluster][pool_name]['pg_num'] = pool['pg_num']
-            data[ceph_cluster][pool_name]['pgp_num'] = pool['pg_placement_num']
-
-        osd_data = data[ceph_cluster]['osd']
-        # number of osds in each possible state
-        for osd in json_data['osds']:
-            if osd['up'] == 1:
-                osd_data['up'] += 1
-            else:
-                osd_data['down'] += 1
-            if osd['in'] == 1:
-                osd_data['in'] += 1
-            else:
-                osd_data['out'] += 1
-    
         return data
 
 try:
-    plugin = CephOsdPlugin()
+    plugin = CephIOPlugin()
 except Exception as exc:
-    collectd.error("ceph-pool: failed to initialize ceph pool plugin :: %s :: %s"
+    collectd.error("ceph-io: failed to initialize ceph pool plugin :: %s :: %s"
             % (exc, traceback.format_exc()))
 
 def read_callback():

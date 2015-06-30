@@ -50,8 +50,15 @@ class CephLatencyPlugin(base.Base):
 
         output = None
         try:
-            output = subprocess.check_output(
-              "timeout 30s rados -p data bench 10 write -t 1 -b 65536 2>/dev/null | grep -i latency | awk '{print 1000*$3}'", shell=True)
+            pools = subprocess.check_output("timeout 30s rados lspools", shell=True).split('\n')
+            if "data" in pools:
+                output = subprocess.check_output("timeout 30s rados -p data bench 10 write -t 1 -b 65536 2>/dev/null | grep -i latency | awk '{print 1000*$3}'", shell=True)
+            elif "rbd" in pools:
+                output = subprocess.check_output("timeout 30s rados -p rbd bench 10 write -t 1 -b 65536 2>/dev/null | grep -i latency | awk '{print 1000*$3}'", shell=True)
+            elif ".rgw.buckets" in pools:
+                output = subprocess.check_output("timeout 30s rados -p .rgw.buckets bench 10 write -t 1 -b 65536 2>/dev/null | grep -i latency | awk '{print 1000*$3}'", shell=True)
+            else:
+                collectd.error('ceph-latency: failed to run rados bench :: no pool data,rbd or .rgw.buckets found')
         except Exception as exc:
             collectd.error("ceph-latency: failed to run rados bench :: %s :: %s"
                     % (exc, traceback.format_exc()))
@@ -73,17 +80,16 @@ class CephLatencyPlugin(base.Base):
 try:
     plugin = CephLatencyPlugin()
 except Exception as exc:
-    collectd.error("ceph-latency: failed to initialize ceph latency plugin :: %s :: %s"
+    collectd.error("ceph-pool: failed to initialize ceph pool plugin :: %s :: %s"
             % (exc, traceback.format_exc()))
-
-def configure_callback(conf):
-    """Received configuration information"""
-    plugin.config_callback(conf)
 
 def read_callback():
     """Callback triggerred by collectd on read"""
     plugin.read_callback()
 
-collectd.register_config(configure_callback)
-collectd.register_read(read_callback, plugin.interval)
+def configure_callback(conf):
+    """Received configuration information"""
+    plugin.config_callback(conf)
+    collectd.register_read(read_callback, plugin.interval)
 
+collectd.register_config(configure_callback)

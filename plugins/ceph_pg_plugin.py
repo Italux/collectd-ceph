@@ -83,17 +83,16 @@ class CephPGPlugin(base.Base):
 try:
     plugin = CephPGPlugin()
 except Exception as exc:
-    collectd.error("ceph-pg: failed to initialize ceph pg plugin :: %s :: %s"
+    collectd.error("ceph-pool: failed to initialize ceph pool plugin :: %s :: %s"
             % (exc, traceback.format_exc()))
-
-def configure_callback(conf):
-    """Received configuration information"""
-    plugin.config_callback(conf)
 
 def read_callback():
     """Callback triggerred by collectd on read"""
     plugin.read_callback()
 
-collectd.register_config(configure_callback)
-collectd.register_read(read_callback, plugin.interval)
+def configure_callback(conf):
+    """Received configuration information"""
+    plugin.config_callback(conf)
+    collectd.register_read(read_callback, plugin.interval)
 
+collectd.register_config(configure_callback)

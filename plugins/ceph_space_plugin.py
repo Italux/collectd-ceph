@@ -36,7 +36,7 @@ import subprocess
 
 import base
 
-class CephPoolPlugin(base.Base):
+class CephSpacePlugin(base.Base):
 
     def __init__(self):
         base.Base.__init__(self)
@@ -51,33 +51,22 @@ class CephPoolPlugin(base.Base):
 
         stats_output = None
         try:
-            stats_output = subprocess.check_output('ceph osd pool stats -f json', shell=True)
             df_output = subprocess.check_output('ceph df -f json', shell=True)
         except Exception as exc:
             collectd.error("ceph-pool: failed to ceph pool stats :: %s :: %s"
                     % (exc, traceback.format_exc()))
             return
 
-        if stats_output is None:
-            collectd.error('ceph-pool: failed to ceph osd pool stats :: output was None')
-
         if df_output is None:
             collectd.error('ceph-pool: failed to ceph df :: output was None')
 
-        json_stats_data = json.loads(stats_output)
         json_df_data = json.loads(df_output)
-
-        # push osd pool stats results
-        for pool in json_stats_data:
-            pool_key = "pool-%s" % pool['pool_name']
-            data[ceph_cluster][pool_key] = {}
-            pool_data = data[ceph_cluster][pool_key] 
-            for stat in ('read_bytes_sec', 'write_bytes_sec', 'op_per_sec'):
-                pool_data[stat] = pool['client_io_rate'][stat] if pool['client_io_rate'].has_key(stat) else 0
 
         # push df results
         for pool in json_df_data['pools']:
-            pool_data = data[ceph_cluster]["pool-%s" % pool['name']]
+            pool_key = "pool-%s" % pool['name']
+            data[ceph_cluster][pool_key] = {}
+            pool_data = data[ceph_cluster][pool_key]
             for stat in ('bytes_used', 'kb_used', 'objects'):
                 pool_data[stat] = pool['stats'][stat] if pool['stats'].has_key(stat) else 0
 
@@ -97,19 +86,18 @@ class CephPoolPlugin(base.Base):
         return data
 
 try:
-    plugin = CephPoolPlugin()
+    plugin = CephSpacePlugin()
 except Exception as exc:
-    collectd.error("ceph-pool: failed to initialize ceph pool plugin :: %s :: %s"
+    collectd.error("ceph-df: failed to initialize ceph pool plugin :: %s :: %s"
             % (exc, traceback.format_exc()))
-
-def configure_callback(conf):
-    """Received configuration information"""
-    plugin.config_callback(conf)
 
 def read_callback():
     """Callback triggerred by collectd on read"""
     plugin.read_callback()
 
-collectd.register_config(configure_callback)
-collectd.register_read(read_callback, plugin.interval)
+def configure_callback(conf):
+    """Received configuration information"""
+    plugin.config_callback(conf)
+    collectd.register_read(read_callback, plugin.interval)
 
+collectd.register_config(configure_callback)
